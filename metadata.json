@@ -1,0 +1,8 @@
+{
+  "name": "Logos Vision 3.2 during phase 3",
+  "description": "A CRM for non-profit consulting and project management, featuring client, project, and task tracking with AI-powered project summaries.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation"
+  ]
+}
