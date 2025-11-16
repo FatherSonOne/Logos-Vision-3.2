@@ -1,15 +1,18 @@
 import React, { useState, useMemo } from 'react';
-import type { Document, Client, Project, TeamMember } from '../types';
+// FIX: Aliased Document to AppDocument to resolve name collision with the global DOM type.
+import type { Document as AppDocument, Client, Project, TeamMember } from '../types';
 import { DocumentCategory } from '../types';
+import { PlusIcon } from './icons';
 
 interface DocumentLibraryProps {
-    documents: Document[];
+    // FIX: Updated prop type to use the AppDocument alias.
+    documents: AppDocument[];
     clients: Client[];
     projects: Project[];
     teamMembers: TeamMember[];
 }
 
-const FileTypeIcon: React.FC<{ type: Document['fileType'] }> = ({ type }) => {
+const FileTypeIcon: React.FC<{ type: AppDocument['fileType'] }> = ({ type }) => {
     const icons = {
         pdf: { icon: <PdfIcon />, color: 'text-red-600' },
         docx: { icon: <DocxIcon />, color: 'text-blue-600' },
@@ -32,7 +35,8 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ documents, cli
         return sorted.filter(doc => doc.category === activeTab);
     }, [documents, activeTab]);
     
-    const getRelatedName = (doc: Document) => {
+    // FIX: Updated type of doc parameter to use the AppDocument alias.
+    const getRelatedName = (doc: AppDocument) => {
         if (doc.category === DocumentCategory.Client) {
             return clients.find(c => c.id === doc.relatedId)?.name || 'Unknown Client';
         }
@@ -130,4 +134,3 @@ const DocxIcon = () => <svg {...iconProps}><path strokeLinecap="round" strokeLin
 const XlsxIcon = () => <svg {...iconProps}><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M4 6h16v12H4zM10 6v12" /></svg>;
 const PptxIcon = () => <svg {...iconProps}><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>;
 const OtherIcon = () => <svg {...iconProps}><path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>;
-const PlusIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>;

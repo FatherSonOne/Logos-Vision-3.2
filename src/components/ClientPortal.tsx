@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import type { Client, Project, Activity, Task, Donation, Document, Event, TeamMember, Volunteer, PortalLayout, PortalComponent, ChatMessage } from '../types';
+// FIX: Aliased Document to AppDocument to resolve name collision with the global DOM type.
+import type { Client, Project, Activity, Task, Donation, Document as AppDocument, Event, TeamMember, Volunteer, PortalLayout, PortalComponent, ChatMessage } from '../types';
 import { ProjectStatus, TaskStatus, ActivityType } from '../types';
 import { chatWithBot } from '../services/geminiService';
 
@@ -10,7 +11,8 @@ interface ClientPortalProps {
   tasks: Task[];
   activities: Activity[];
   donations: Donation[];
-  documents: Document[];
+  // FIX: Updated prop type to use the AppDocument alias.
+  documents: AppDocument[];
   events: Event[];
   team: TeamMember[];
   volunteers: Volunteer[];

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import type { Client, Project, Donation, Activity, Case, TeamMember } from '../types';
+// FIX: Aliased Document to AppDocument to resolve name collision with the global DOM type.
+import type { Client, Project, Donation, Activity, Case, TeamMember, Document as AppDocument } from '../types';
 import { ActivityType, ProjectStatus, CasePriority } from '../types';
 import { generateReportSummary, generateChartInsights } from '../services/geminiService';
 import {
@@ -18,7 +19,8 @@ interface ReportsProps {
   activities: Activity[];
   cases: Case[];
   teamMembers: TeamMember[];
-  documents: Document[];
+  // FIX: Updated prop type to use the AppDocument alias.
+  documents: AppDocument[];
 }
 
 const COLORS = ['#4F46E5', '#7C3AED', '#0EA5E9', '#14B8A6', '#F59E0B', '#EF4444', '#64748B'];

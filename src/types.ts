@@ -38,6 +38,7 @@ export interface Task {
   status: TaskStatus;
   sharedWithClient?: boolean;
   notes?: string;
+  phase?: string; // For AI project scaffolding
 }
 
 export interface Project {
@@ -332,6 +333,25 @@ export interface CalendarEvent {
     color: { bg: string, text: string, border: string };
     type: 'project' | 'task' | 'activity';
 }
+
+export interface RecommendedVolunteer {
+  volunteerId: string;
+  name: string;
+  justification: string;
+  matchScore: number; // A score from 0-100 indicating match quality
+}
+
+export interface AiPhase {
+    phaseName: string;
+    tasks: string[];
+}
+export interface AiProjectPlan {
+    projectName: string;
+    description: string;
+    phases: AiPhase[];
+    error?: string;
+}
+
 
 export type Page = 
   | 'dashboard' 

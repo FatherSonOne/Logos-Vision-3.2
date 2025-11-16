@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import type { Client, Project, Activity, Case, Donation, Document, TeamMember, Event } from '../types';
+// FIX: Aliased Document to AppDocument to resolve name collision with the global DOM type.
+import type { Client, Project, Activity, Case, Donation, Document as AppDocument, TeamMember, Event } from '../types';
 import { ProjectStatus, CaseStatus, ActivityType } from '../types';
 import { generateDonorInsights, DonorInsightsResult } from '../services/geminiService';
 
@@ -9,7 +10,8 @@ interface OrganizationDetailProps {
   activities: Activity[];
   cases: Case[];
   donations: Donation[];
-  documents: Document[];
+  // FIX: Updated prop type to use the AppDocument alias.
+  documents: AppDocument[];
   teamMembers: TeamMember[];
   events: Event[];
   onBack: () => void;

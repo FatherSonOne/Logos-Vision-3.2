@@ -1,14 +1,14 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { Header } from '../components/Header';
 import { Sidebar } from '../components/Sidebar';
-import { Placeholder } from '../components/Placeholder';
 import { Dashboard } from '../components/Dashboard';
 import { ProjectList } from '../components/ProjectList';
 import { ProjectDetail } from '../components/ProjectDetail';
 import { mockClients, mockTeamMembers, mockProjects, mockActivities, mockChatRooms, mockChatMessages, mockDonations, mockVolunteers, mockCases, mockDocuments, mockWebpages, mockEvents, mockEmailCampaigns } from '../data/mockData';
 import { portalDbService } from '../services/portalDbService';
 import { performAdvancedSearch } from '../services/geminiService';
-import type { Client, TeamMember, Project, EnrichedTask, Activity, ChatRoom, ChatMessage, Donation, Volunteer, Case, Document, Webpage, CaseComment, Event, PortalLayout, EmailCampaign, WebSearchResult, SearchResults } from '../types';
+import type { Client, TeamMember, Project, EnrichedTask, Activity, ChatRoom, ChatMessage, Donation, Volunteer, Case, Document as AppDocument, Webpage, CaseComment, Event, PortalLayout, EmailCampaign, WebSearchResult, SearchResults, AiProjectPlan } from '../types';
+import { ProjectStatus, TaskStatus, ActivityType, ActivityStatus, CaseStatus, DocumentCategory } from '../types';
 import type { Page } from '../types';
 import { ClientList } from '../components/ClientList';
 import { OrganizationDetail } from '../components/OrganizationDetail';
@@ -32,7 +32,7 @@ import { CaseManagement } from '../components/CaseManagement';
 import { DocumentLibrary } from '../components/DocumentLibrary';
 import { WebManagement } from '../components/WebManagement';
 import { GoldPages } from '../components/GoldPages';
-import { WebpageStatus, DocumentCategory, ActivityType, ActivityStatus, CaseStatus } from '../types';
+import { WebpageStatus } from '../types';
 import { AiChatBot } from '../components/AiChatBot';
 import { AiTools } from '../components/AiTools';
 import { LiveChat } from '../components/LiveChat';
@@ -49,6 +49,7 @@ import { GrantAssistant } from '../components/GrantAssistant';
 import { useToast } from './components/ui/Toast';
 import { GuidedTour, TourStep } from '../components/GuidedTour';
 import { QuickAddButton, QuickAction } from '../components/quickadd/QuickAddButton';
+import { ProjectPlannerModal } from '../components/ProjectPlannerModal';
 import { ClipboardListIcon, CaseIcon, BuildingIcon, SparklesIcon, FolderIcon, CalendarIcon, HandHeartIcon } from '../components/icons';
 
 const App: React.FC = () => {
@@ -62,7 +63,7 @@ const App: React.FC = () => {
   const [donations, setDonations] = useState<Donation[]>(mockDonations);
   const [volunteers, setVolunteers] = useState<Volunteer[]>(mockVolunteers);
   const [cases, setCases] = useState<Case[]>(mockCases);
-  const [documents, setDocuments] = useState<Document[]>(mockDocuments);
+  const [documents, setDocuments] = useState<AppDocument[]>(mockDocuments);
   const [webpages, setWebpages] = useState<Webpage[]>(mockWebpages);
   const [events, setEvents] = useState<Event[]>(mockEvents);
   const [emailCampaigns, setEmailCampaigns] = useState<EmailCampaign[]>(mockEmailCampaigns);
@@ -92,6 +93,7 @@ const App: React.FC = () => {
   const [isCaseDialogOpen, setIsCaseDialogOpen] = useState(false);
   const [editingCase, setEditingCase] = useState<Case | null>(null);
   const [isAiChatOpen, setIsAiChatOpen] = useState(false);
+  const [isProjectPlannerOpen, setIsProjectPlannerOpen] = useState(false);
 
   // State for Gold Pages editor
   const [isGoldPagesEditorOpen, setIsGoldPagesEditorOpen] = useState(false);
@@ -116,7 +118,6 @@ const App: React.FC = () => {
 
   // Quick Add Actions Configuration
   const quickActions: QuickAction[] = useMemo(() => {
-    // This is the full set of general-purpose quick actions
     const allActions: QuickAction[] = [
       {
         id: 'ai-chat',
@@ -130,18 +131,14 @@ const App: React.FC = () => {
         label: 'New Project',
         icon: <FolderIcon />,
         color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300',
-        onClick: () => {
-          showToast('Project creation coming soon!', 'info');
-        },
+        onClick: () => setIsProjectPlannerOpen(true),
       },
       {
         id: 'add-client',
         label: 'Add Organization',
         icon: <BuildingIcon />,
         color: 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-300',
-        onClick: () => {
-          setIsAddContactDialogOpen(true);
-        },
+        onClick: () => setIsAddContactDialogOpen(true),
       },
       {
         id: 'schedule-meeting',
@@ -175,9 +172,7 @@ const App: React.FC = () => {
         label: 'Add Volunteer',
         icon: <HandHeartIcon />,
         color: 'bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-300',
-        onClick: () => {
-          setIsAddVolunteerDialogOpen(true);
-        },
+        onClick: () => setIsAddVolunteerDialogOpen(true),
       },
       {
         id: 'create-case',
@@ -190,29 +185,15 @@ const App: React.FC = () => {
         },
       },
     ];
-
-    // Find the most relevant action for the current page
     let primaryActionId: string | null = null;
     switch (currentPage) {
-      case 'projects':
-        primaryActionId = 'new-project';
-        break;
+      case 'projects': primaryActionId = 'new-project'; break;
       case 'organizations':
-      case 'contacts':
-        primaryActionId = 'add-client';
-        break;
-      case 'case':
-        primaryActionId = 'create-case';
-        break;
-      case 'volunteers':
-        primaryActionId = 'add-volunteer';
-        break;
-      case 'activities':
-        primaryActionId = 'log-activity';
-        break;
+      case 'contacts': primaryActionId = 'add-client'; break;
+      case 'case': primaryActionId = 'create-case'; break;
+      case 'volunteers': primaryActionId = 'add-volunteer'; break;
+      case 'activities': primaryActionId = 'log-activity'; break;
     }
-    
-    // If a primary action is identified, move it to the front of the list
     if (primaryActionId) {
       const primaryAction = allActions.find(a => a.id === primaryActionId);
       if (primaryAction) {
@@ -220,11 +201,8 @@ const App: React.FC = () => {
         return [primaryAction, ...otherActions];
       }
     }
-    
-    // Return the default order if no specific action is found for the page
     return allActions;
-
-  }, [currentPage, currentUserId, showToast]);
+  }, [currentPage, currentUserId]);
 
   const tourSteps: TourStep[] = [
     {
@@ -357,7 +335,6 @@ const App: React.FC = () => {
 
   const handleSaveActivity = (activity: Omit<Activity, 'createdById'> & { id?: string }) => {
     if (activity.id) {
-      // Update existing activity
       setActivities(prev => prev.map(act => 
         act.id === activity.id 
           ? { ...act, ...activity } 
@@ -365,7 +342,6 @@ const App: React.FC = () => {
       ).sort((a,b) => new Date(b.activityDate).getTime() - new Date(a.activityDate).getTime()));
       showToast(`Activity "${activity.title}" updated successfully`, 'success');
     } else {
-      // Add new activity
       const newActivity: Activity = {
         ...(activity as Omit<Activity, 'id' | 'createdById'>),
         id: `act-${Date.now()}`,
@@ -458,10 +434,43 @@ const App: React.FC = () => {
   }
 
   const handleAddProject = () => {
-    // Placeholder for adding a new project
-    console.log('Attempting to add a new project...');
-    showToast('Feature to add projects coming soon!', 'info');
+    setIsProjectPlannerOpen(true);
   };
+
+  const handleSaveProjectPlan = (plan: AiProjectPlan, clientId: string) => {
+    const today = new Date();
+    const endDate = new Date();
+    endDate.setMonth(endDate.getMonth() + 3); // Estimate 3 month duration
+
+    const newTasks = plan.phases.flatMap(phase => 
+        phase.tasks.map(taskDesc => ({
+            id: `task-${Date.now()}-${Math.random()}`,
+            description: taskDesc,
+            teamMemberId: '', // Unassigned initially
+            dueDate: endDate.toISOString().split('T')[0],
+            status: TaskStatus.ToDo,
+            phase: phase.phaseName,
+        }))
+    );
+
+    const newProject: Project = {
+        id: `p-${Date.now()}`,
+        name: plan.projectName,
+        description: plan.description,
+        clientId,
+        teamMemberIds: [], // Unassigned initially
+        startDate: today.toISOString().split('T')[0],
+        endDate: endDate.toISOString().split('T')[0],
+        status: ProjectStatus.Planning,
+        tasks: newTasks,
+    };
+
+    setProjects(prev => [newProject, ...prev]);
+    setIsProjectPlannerOpen(false);
+    showToast(`Project "${newProject.name}" created successfully!`, 'success');
+    handleSelectProject(newProject.id);
+  };
+
 
   // --- Case Management Handlers ---
   const handleAddCase = () => {
@@ -696,6 +705,8 @@ const App: React.FC = () => {
               projectTeamMembers={projectTeamMembers} 
               allTeamMembers={teamMembers} 
               cases={projectCases}
+              // FIX: Add missing 'volunteers' prop to ProjectDetail component.
+              volunteers={volunteers}
               onBack={handleBackToList}
               onUpdateTaskNote={handleUpdateTaskNote}
             />
@@ -806,7 +817,7 @@ const App: React.FC = () => {
         if (portalClientId) {
             const client = clients.find(c => c.id === portalClientId);
             if (!client) {
-                setPortalClientId(null); // Should not happen, but good practice
+                setPortalClientId(null);
                 return <ClientPortalLogin clients={clients} onSelectClient={handlePortalLogin} />;
             }
             const layout = portalLayouts.find(l => l.clientId === portalClientId);
@@ -838,6 +849,8 @@ const App: React.FC = () => {
                   volunteers={volunteers} 
                   clients={clients} 
                   projects={projects} 
+                  // FIX: Add missing 'teamMembers' prop to VolunteerList component.
+                  teamMembers={teamMembers}
                   onAddVolunteer={() => setIsAddVolunteerDialogOpen(true)} 
                 />;
       case 'charity': 
@@ -973,6 +986,12 @@ const App: React.FC = () => {
           onSave={handleAddVolunteer}
           clients={clients}
           projects={projects}
+        />
+        <ProjectPlannerModal
+            isOpen={isProjectPlannerOpen}
+            onClose={() => setIsProjectPlannerOpen(false)}
+            onSave={handleSaveProjectPlan}
+            clients={clients}
         />
         {isGoldPagesEditorOpen && editingWebpage && (
           <div className="absolute inset-0 z-50 bg-white/30 dark:bg-slate-900/50 backdrop-blur-xl">

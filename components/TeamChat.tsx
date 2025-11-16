@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { ChatRoom, ChatMessage, TeamMember } from '../types';
-import { PlusIcon, SendIcon } from './icons';
+import { PlusIcon, SendIcon, SparklesIcon } from './icons';
+import { Modal } from './Modal';
+import { summarizeChatHistory } from '../services/geminiService';
 
 interface TeamChatProps {
   rooms: ChatRoom[];
@@ -15,6 +17,10 @@ export const TeamChat: React.FC<TeamChatProps> = ({ rooms, messages, teamMembers
   const [activeRoomId, setActiveRoomId] = useState<string>(rooms[0]?.id || '');
   const [newMessage, setNewMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
+  const [summaryContent, setSummaryContent] = useState('');
+  const [isSummarizing, setIsSummarizing] = useState(false);
 
   const activeRoom = rooms.find(r => r.id === activeRoomId);
   const filteredMessages = messages.filter(m => m.roomId === activeRoomId).sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
@@ -36,6 +42,24 @@ export const TeamChat: React.FC<TeamChatProps> = ({ rooms, messages, teamMembers
     if (newMessage.trim() && activeRoomId) {
       onSendMessage(activeRoomId, newMessage.trim());
       setNewMessage('');
+    }
+  };
+
+  const handleSummarize = async () => {
+    if (isSummarizing || filteredMessages.length < 3) return;
+    
+    setIsSummaryModalOpen(true);
+    setIsSummarizing(true);
+    setSummaryContent('');
+
+    try {
+        const summary = await summarizeChatHistory(filteredMessages, teamMembers);
+        setSummaryContent(summary);
+    } catch (error) {
+        console.error("Failed to generate summary:", error);
+        setSummaryContent("Sorry, an error occurred while generating the summary.");
+    } finally {
+        setIsSummarizing(false);
     }
   };
 
@@ -81,8 +105,17 @@ export const TeamChat: React.FC<TeamChatProps> = ({ rooms, messages, teamMembers
           </div>
         ) : (
           <>
-            <header className="p-4 border-b border-white/20 bg-white/20 dark:bg-slate-900/40 backdrop-blur-sm dark:border-slate-700">
+            <header className="p-4 border-b border-white/20 bg-white/20 dark:bg-slate-900/40 backdrop-blur-sm dark:border-slate-700 flex justify-between items-center">
               <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{activeRoom.name}</h3>
+              <button
+                onClick={handleSummarize}
+                disabled={filteredMessages.length < 3 || isSummarizing}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold rounded-md border border-white/30 hover:bg-white/50 text-slate-700 dark:bg-black/20 dark:border-white/20 dark:text-slate-200 dark:hover:bg-black/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Summarize this conversation with AI"
+              >
+                <SparklesIcon />
+                {isSummarizing ? 'Summarizing...' : 'Summarize Chat'}
+              </button>
             </header>
 
             <div className="flex-1 p-4 overflow-y-auto space-y-4">
@@ -126,6 +159,24 @@ export const TeamChat: React.FC<TeamChatProps> = ({ rooms, messages, teamMembers
           </>
         )}
       </main>
+
+       {/* Summary Modal */}
+      <Modal 
+        isOpen={isSummaryModalOpen} 
+        onClose={() => setIsSummaryModalOpen(false)} 
+        title={`Summary for ${activeRoom?.name}`}
+      >
+        {isSummarizing ? (
+          <div className="flex flex-col items-center justify-center h-48">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500"></div>
+            <p className="mt-4 text-slate-500 dark:text-slate-400">Gemini is generating your summary...</p>
+          </div>
+        ) : (
+          <div className="prose dark:prose-invert max-w-none text-slate-800 dark:text-slate-200 whitespace-pre-wrap">
+             {summaryContent}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };

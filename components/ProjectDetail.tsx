@@ -1,13 +1,15 @@
-import React, { useState, useCallback } from 'react';
-import type { Project, Client, TeamMember, Task, Case } from '../types';
+import React, { useState, useCallback, useEffect } from 'react';
+import type { Project, Client, TeamMember, Task, Case, Volunteer, RecommendedVolunteer } from '../types';
 import { ProjectStatus, TaskStatus } from '../types';
-import { generateProjectSummary, generateSpokenText, analyzeProjectRisk, RiskAnalysisResult } from '../services/geminiService';
+import { generateProjectSummary, generateSpokenText, analyzeProjectRisk, RiskAnalysisResult, recommendVolunteers } from '../services/geminiService';
 import { Modal } from './Modal';
 import { TaskTimeline } from './TaskTimeline';
 import { decodeAudioData, decode } from '../utils/audio';
 import { getDeadlineStatus } from '../utils/dateHelpers';
 import { AiEnhancedTextarea } from './AiEnhancedTextarea';
 import { Breadcrumbs } from '../src/components/ui/Breadcrumbs';
+import { useToast } from '../src/components/ui/Toast';
+import { ClockIcon, SparklesIcon, ShieldExclamationIcon, ShieldCheckIconSolid, ShieldExclamationIconSolid, NoteIcon, SoundWaveIcon, PlayIcon, UsersIcon } from './icons';
 
 const StatusBadge: React.FC<{ status: ProjectStatus | TaskStatus }> = ({ status }) => {
   const colors = {
@@ -34,11 +36,12 @@ interface ProjectDetailProps {
   projectTeamMembers: TeamMember[];
   allTeamMembers: TeamMember[];
   cases: Case[];
+  volunteers: Volunteer[];
   onBack: () => void;
   onUpdateTaskNote: (projectId: string, taskId: string, notes: string) => void;
 }
 
-export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, client, projectTeamMembers, allTeamMembers, cases, onBack, onUpdateTaskNote }) => {
+export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, client, projectTeamMembers, allTeamMembers, cases, volunteers, onBack, onUpdateTaskNote }) => {
     const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
     const [aiSummary, setAiSummary] = useState('');
     const [summarySources, setSummarySources] = useState<any[]>([]);
@@ -49,6 +52,11 @@ export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, client, p
     const [currentNote, setCurrentNote] = useState('');
     const [riskAnalysisResult, setRiskAnalysisResult] = useState<RiskAnalysisResult | null>(null);
     const [isAnalyzingRisk, setIsAnalyzingRisk] = useState(false);
+
+    const [isRecModalOpen, setIsRecModalOpen] = useState(false);
+    const [selectedTaskForRecs, setSelectedTaskForRecs] = useState<Task | null>(null);
+    const [recommendations, setRecommendations] = useState<RecommendedVolunteer[]>([]);
+    const [isRecommending, setIsRecommending] = useState(false);
 
     const projectDeadline = getDeadlineStatus(project.endDate, project.status === ProjectStatus.Completed);
 
@@ -107,6 +115,24 @@ export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, client, p
         setRiskAnalysisResult(result);
         setIsAnalyzingRisk(false);
     }, [project, cases]);
+
+    const handleFindVolunteers = (task: Task) => {
+        setSelectedTaskForRecs(task);
+        setIsRecModalOpen(true);
+        setIsRecommending(true);
+        setRecommendations([]);
+    };
+
+    useEffect(() => {
+        if (selectedTaskForRecs) {
+            const fetchRecommendations = async () => {
+                const recs = await recommendVolunteers(selectedTaskForRecs.description, volunteers);
+                setRecommendations(recs);
+                setIsRecommending(false);
+            };
+            fetchRecommendations();
+        }
+    }, [selectedTaskForRecs, volunteers]);
 
     const riskColorClasses = {
         Low: {
@@ -294,6 +320,9 @@ export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, client, p
                                             <span className="text-slate-500 dark:text-slate-400">{allTeamMembers.find(c => c.id === task.teamMemberId)?.name || 'N/A'}</span>
                                             <span className={`${taskDeadline.color}`}>{new Date(task.dueDate).toLocaleDateString()}</span>
                                             <StatusBadge status={task.status} />
+                                            <button onClick={() => handleFindVolunteers(task)} className="text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400" title="Suggest Volunteers for this task">
+                                                <UsersIcon />
+                                            </button>
                                             <button onClick={() => handleNoteToggle(task.id, task.notes)} className="text-slate-500 hover:text-cyan-600 dark:text-slate-400 dark:hover:text-cyan-400" title={task.notes ? "View/Edit Note" : "Add Note"}>
                                                 <NoteIcon hasNote={!!task.notes} />
                                             </button>
@@ -367,30 +396,73 @@ export const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, client, p
                     </div>
                 )}
             </Modal>
+            <VolunteerRecModal
+                isOpen={isRecModalOpen}
+                onClose={() => setIsRecModalOpen(false)}
+                task={selectedTaskForRecs}
+                recommendations={recommendations}
+                isLoading={isRecommending}
+                allVolunteers={volunteers}
+            />
         </div>
     );
 };
 
-const ClockIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
+const VolunteerRecModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    task: Task | null;
+    recommendations: RecommendedVolunteer[];
+    isLoading: boolean;
+    allVolunteers: Volunteer[];
+}> = ({ isOpen, onClose, task, recommendations, isLoading, allVolunteers }) => {
+    const { showToast } = useToast();
 
-const SparklesIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.293 2.293a1 1 0 010 1.414L13 12l-1.293 1.293a1 1 0 01-1.414 0L8 10.414a1 1 0 010-1.414L10.293 7l-2.293-2.293a1 1 0 011.414 0L12 6.414l1.293-1.293a1 1 0 011.414 0zM17 12l-2.293 2.293a1 1 0 01-1.414 0L12 13l-1.293 1.293a1 1 0 01-1.414 0L8 13.414a1 1 0 010-1.414L10.293 10l-2.293-2.293a1 1 0 011.414 0L12 9.414l1.293-1.293a1 1 0 011.414 0L17 10.414a1 1 0 010 1.414L14.707 13l2.293 2.293a1 1 0 010 1.414L15 18l1.293-1.293a1 1 0 011.414 0L20 18.414a1 1 0 010-1.414L17.707 15l2.293-2.293a1 1 0 010-1.414L18 10l-1.293 1.293a1 1 0 01-1.414 0L14 10.414a1 1 0 010-1.414l2.293-2.293a1 1 0 011.414 0L20 9.414a1 1 0 010 1.414L17.707 12z" /></svg>;
+    const handleAssign = (volunteerId: string) => {
+        const volunteer = allVolunteers.find(v => v.id === volunteerId);
+        showToast(`Assigned ${volunteer?.name} to "${task?.description}"! (Simulated)`, 'success');
+        onClose();
+    };
 
-const SoundWaveIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M2 10v4" />
-        <path d="M6 7v10" />
-        <path d="M10 4v16" />
-        <path d="M14 7v10" />
-        <path d="M18 10v4" />
-    </svg>
-);
-
-const PlayIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" /></svg>;
-const ShieldExclamationIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>;
-const ShieldCheckIconSolid = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 1.944A11.954 11.954 0 012.166 5.023L2 5.051a12 12 0 00-1 7.07c0 5.488 4.024 9.94 9 10.941 4.976-1.001 9-5.453 9-10.941 0-2.652-.76-5.138-2.166-7.07l-.166-.228A11.954 11.954 0 0110 1.944zm3.707 6.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l5-5z" clipRule="evenodd" /></svg>;
-const ShieldExclamationIconSolid = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 1.944A11.954 11.954 0 012.166 5.023L2 5.051a12 12 0 00-1 7.07c0 5.488 4.024 9.94 9 10.941 4.976-1.001 9-5.453 9-10.941 0-2.652-.76-5.138-2.166-7.07l-.166-.228A11.954 11.954 0 0110 1.944zM9 14a1 1 0 112 0 1 1 0 01-2 0zm1-7a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>;
-const NoteIcon = ({ hasNote }: { hasNote: boolean }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill={hasNote ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-    </svg>
-);
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title={`Volunteer Suggestions for "${task?.description}"`}>
+            {isLoading && (
+                <div className="flex flex-col items-center justify-center h-48">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
+                    <p className="mt-4 text-slate-500">Finding best matches...</p>
+                </div>
+            )}
+            {!isLoading && recommendations.length > 0 && (
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+                    {recommendations.map(rec => {
+                        const volunteer = allVolunteers.find(v => v.id === rec.volunteerId);
+                        if (!volunteer) return null;
+                        return (
+                            <div key={rec.volunteerId} className="p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border dark:border-slate-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                                <div className="flex-1">
+                                    <h4 className="font-bold text-slate-800 dark:text-slate-100">{volunteer.name}</h4>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                                        <strong>Skills:</strong> {volunteer.skills.join(', ')} <br/>
+                                        <strong>Availability:</strong> {volunteer.availability}
+                                    </p>
+                                    <p className="text-sm text-indigo-600 dark:text-indigo-400 mt-2 italic">
+                                        <strong>AI Justification:</strong> "{rec.justification}" (Match: {rec.matchScore}%)
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => handleAssign(rec.volunteerId)}
+                                    className="px-3 py-1.5 bg-indigo-600 text-white text-sm font-semibold rounded-md hover:bg-indigo-700 flex-shrink-0"
+                                >
+                                    Assign
+                                </button>
+                            </div>
+                        )
+                    })}
+                </div>
+            )}
+            {!isLoading && recommendations.length === 0 && (
+                <p className="text-center text-slate-500 py-8">Could not find any suitable volunteers.</p>
+            )}
+        </Modal>
+    );
+};
