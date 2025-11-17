@@ -1,8 +1,10 @@
 
 
+
+
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 // FIX: Rename 'Document' to 'AppDocument' to avoid name collision with the global DOM Document type.
-import type { Project, TeamMember, Client, Task, WebpageComponent, ChatMessage, EnrichedTask, Activity, Volunteer, Case, Document as AppDocument, WebSearchResult, Donation, Event, RecommendedVolunteer, AiProjectPlan } from '../types';
+import type { Project, TeamMember, Client, Task, WebpageComponent, ChatMessage, EnrichedTask, Activity, Volunteer, Case, Document as AppDocument, WebSearchResult, Donation, Event, RecommendedVolunteer, AiProjectPlan, MeetingAnalysisResult } from '../types';
 import { TaskStatus, CasePriority, ActivityStatus, CaseStatus } from '../types';
 
 // IMPORTANT: Do not expose your API key in client-side code in a real application.
@@ -815,6 +817,75 @@ export async function transcribeAudio(audioDataB64: string, mimeType: string): P
         return "Error transcribing audio. The model may not support this audio format.";
     }
 }
+
+const meetingAnalysisSchema = {
+    type: Type.OBJECT,
+    properties: {
+        summary: {
+            type: Type.STRING,
+            description: "A concise summary of the meeting formatted in markdown. Include sections for 'Key Decisions' and 'Discussion Points'."
+        },
+        actionItems: {
+            type: Type.ARRAY,
+            description: "A list of clear, actionable tasks identified from the transcript.",
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    taskDescription: {
+                        type: Type.STRING,
+                        description: "The full description of the action item."
+                    },
+                    suggestedAssignee: {
+                        type: Type.STRING,
+                        description: "The name of the person mentioned as responsible, if any. Null if no one is mentioned."
+                    }
+                },
+                required: ['taskDescription']
+            }
+        }
+    },
+    required: ['summary', 'actionItems']
+};
+
+export async function analyzeTranscript(transcript: string): Promise<MeetingAnalysisResult> {
+    if (!process.env.API_KEY) {
+        return { summary: "API key not configured.", actionItems: [] };
+    }
+
+    const prompt = `
+        You are an expert meeting summarization assistant. Analyze the following meeting transcript.
+        Your task is to:
+        1. Create a concise summary of the meeting. The summary should be in markdown and include a "Key Decisions" section if any were made.
+        2. Extract all clear action items. For each action item, identify who it was assigned to if mentioned.
+
+        Return the result as a single JSON object that strictly adheres to the provided schema.
+
+        **Meeting Transcript:**
+        ---
+        ${transcript}
+        ---
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-pro',
+            contents: prompt,
+            config: {
+                responseMimeType: 'application/json',
+                responseSchema: meetingAnalysisSchema,
+            }
+        });
+        return JSON.parse(response.text);
+    } catch (error) {
+        console.error("Error analyzing transcript:", error);
+        return {
+            summary: "An error occurred while analyzing the transcript.",
+            actionItems: [],
+            error: "Failed to process the transcript."
+        };
+    }
+}
+
 
 export async function findNearbyPlaces(lat: number, lng: number, query: string): Promise<{ text: string, sources: any[] }> {
   if (!process.env.API_KEY) {

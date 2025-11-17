@@ -352,6 +352,16 @@ export interface AiProjectPlan {
     error?: string;
 }
 
+export interface ActionItemSuggestion {
+  taskDescription: string;
+  suggestedAssignee?: string;
+}
+
+export interface MeetingAnalysisResult {
+  summary: string;
+  actionItems: ActionItemSuggestion[];
+  error?: string;
+}
 
 export type Page = 
   | 'dashboard' 

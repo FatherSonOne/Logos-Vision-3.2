@@ -1,16 +1,18 @@
 import React, { useState, useMemo } from 'react';
-import type { Document, Client, Project, TeamMember } from '../types';
+// FIX: Aliased Document to AppDocument to resolve name collision with the global DOM type.
+import type { Document as AppDocument, Client, Project, TeamMember } from '../types';
 import { DocumentCategory } from '../types';
 import { PlusIcon } from './icons';
 
 interface DocumentLibraryProps {
-    documents: Document[];
+    // FIX: Updated prop type to use the AppDocument alias.
+    documents: AppDocument[];
     clients: Client[];
     projects: Project[];
     teamMembers: TeamMember[];
 }
 
-const FileTypeIcon: React.FC<{ type: Document['fileType'] }> = ({ type }) => {
+const FileTypeIcon: React.FC<{ type: AppDocument['fileType'] }> = ({ type }) => {
     const icons = {
         pdf: { icon: <PdfIcon />, color: 'text-red-600' },
         docx: { icon: <DocxIcon />, color: 'text-blue-600' },
@@ -33,7 +35,8 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({ documents, cli
         return sorted.filter(doc => doc.category === activeTab);
     }, [documents, activeTab]);
     
-    const getRelatedName = (doc: Document) => {
+    // FIX: Updated type of doc parameter to use the AppDocument alias.
+    const getRelatedName = (doc: AppDocument) => {
         if (doc.category === DocumentCategory.Client) {
             return clients.find(c => c.id === doc.relatedId)?.name || 'Unknown Client';
         }

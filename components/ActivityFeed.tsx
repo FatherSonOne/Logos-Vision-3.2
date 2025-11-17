@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import type { Activity, Client, Project, TeamMember } from '../types';
-import { ActivityType } from '../types';
+import { ActivityType, ActivityStatus } from '../types';
 import { ExportButton, type ExportField } from './export/ExportButton';
-import { PlusIcon, PhoneIcon, MailIcon, UsersIcon, DocumentTextIcon, PencilIcon, TrashIcon } from './icons';
+import { PlusIcon, PhoneIcon, MailIcon, UsersIcon, DocumentTextIcon, PencilIcon, TrashIcon, SparklesIcon } from './icons';
 
 interface ActivityFeedProps {
     activities: Activity[];
@@ -12,6 +12,7 @@ interface ActivityFeedProps {
     onLogActivity: () => void;
     onEdit: (activity: Activity) => void;
     onDelete: (activityId: string) => void;
+    onProcessMeeting?: (activity: Activity) => void;
 }
 
 const ActivityTypeIcon: React.FC<{ type: ActivityType }> = ({ type }) => {
@@ -24,7 +25,7 @@ const ActivityTypeIcon: React.FC<{ type: ActivityType }> = ({ type }) => {
     return <div className="h-10 w-10 rounded-full bg-white/50 dark:bg-black/20 flex items-center justify-center text-slate-500 flex-shrink-0 dark:text-slate-400 shadow-inner">{icons[type] || <DocumentTextIcon />}</div>
 }
 
-export const ActivityFeed: React.FC<ActivityFeedProps> = ({ activities, projects, clients, teamMembers, onLogActivity, onEdit, onDelete }) => {
+export const ActivityFeed: React.FC<ActivityFeedProps> = ({ activities, projects, clients, teamMembers, onLogActivity, onEdit, onDelete, onProcessMeeting }) => {
     const [typeFilter, setTypeFilter] = useState('all');
     const [memberFilter, setMemberFilter] = useState('all');
     
@@ -114,6 +115,11 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ activities, projects
                             className="flex-1 bg-white/20 dark:bg-slate-900/40 backdrop-blur-xl p-4 rounded-lg border border-white/20 group relative cursor-pointer hover:border-white/40 dark:hover:border-white/20 transition-colors"
                         >
                             <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                {activity.type === ActivityType.Meeting && activity.status === ActivityStatus.Completed && onProcessMeeting && (
+                                     <button onClick={(e) => { e.stopPropagation(); onProcessMeeting(activity); }} title="AI Meeting Assistant" className="p-1.5 text-slate-500 hover:bg-white/50 rounded-md dark:text-slate-400 dark:hover:bg-black/20">
+                                        <SparklesIcon />
+                                    </button>
+                                )}
                                 <button onClick={(e) => { e.stopPropagation(); onEdit(activity); }} title="Edit Activity" className="p-1.5 text-slate-500 hover:bg-white/50 rounded-md dark:text-slate-400 dark:hover:bg-black/20">
                                     <PencilIcon />
                                 </button>

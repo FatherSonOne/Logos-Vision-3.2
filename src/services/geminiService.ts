@@ -1,5 +1,8 @@
+
+
 import { GoogleGenAI, Type, Modality } from "@google/genai";
-import type { Project, TeamMember, Client, Task, WebpageComponent, ChatMessage, EnrichedTask, Activity, Volunteer, Case, Document, WebSearchResult, Donation, Event } from '../types';
+// FIX: Rename 'Document' to 'AppDocument' to avoid name collision with the global DOM Document type.
+import type { Project, TeamMember, Client, Task, WebpageComponent, ChatMessage, EnrichedTask, Activity, Volunteer, Case, Document as AppDocument, WebSearchResult, Donation, Event, RecommendedVolunteer, AiProjectPlan, MeetingAnalysisResult } from '../types';
 import { TaskStatus, CasePriority, ActivityStatus, CaseStatus } from '../types';
 
 // IMPORTANT: Do not expose your API key in client-side code in a real application.
@@ -128,6 +131,72 @@ export async function analyzeProjectRisk(
     console.error("Error analyzing project risk:", error);
     return { riskLevel: 'Low', explanation: 'An error occurred during risk analysis.' };
   }
+}
+
+const projectPlanSchema = {
+    type: Type.OBJECT,
+    properties: {
+        projectName: { type: Type.STRING, description: 'A clear, concise name for the project.' },
+        description: { type: Type.STRING, description: 'A one-paragraph summary of the project plan.' },
+        phases: {
+            type: Type.ARRAY,
+            description: 'An array of project phases.',
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    phaseName: { type: Type.STRING, description: 'The name of the phase (e.g., "Planning & Logistics").' },
+                    tasks: {
+                        type: Type.ARRAY,
+                        description: 'A list of specific, actionable tasks for this phase.',
+                        items: { type: Type.STRING }
+                    }
+                },
+                required: ['phaseName', 'tasks']
+            }
+        }
+    },
+    required: ['projectName', 'description', 'phases']
+};
+
+export async function generateProjectPlan(goal: string): Promise<AiProjectPlan> {
+    if (!process.env.API_KEY) {
+        return { projectName: 'Error', description: 'API key not configured.', phases: [] };
+    }
+
+    const prompt = `
+        You are an expert project manager for a non-profit consulting firm.
+        Based on the user's high-level goal, generate a structured project plan.
+        
+        **User's Goal:**
+        "${goal}"
+
+        **Instructions:**
+        1.  Create a clear and professional project name.
+        2.  Write a brief, one-paragraph description of the project.
+        3.  Break the project down into 3-5 logical phases (e.g., "Planning", "Execution", "Post-Event").
+        4.  For each phase, list 3-5 specific, actionable tasks.
+        5.  Return the entire plan as a single JSON object that strictly adheres to the provided schema.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-pro',
+            contents: prompt,
+            config: {
+                responseMimeType: 'application/json',
+                responseSchema: projectPlanSchema,
+            }
+        });
+        return JSON.parse(response.text);
+    } catch (error) {
+        console.error("Error generating project plan:", error);
+        return {
+            projectName: "Plan Generation Failed",
+            description: "An error occurred while trying to generate the project plan. The model may have returned an unexpected format. Please try again.",
+            phases: [],
+            error: "An error occurred while generating the plan."
+        };
+    }
 }
 
 export interface DonorInsightsResult {
@@ -511,6 +580,183 @@ export async function chatWithBot(
     }
 }
 
+export async function summarizeChatHistory(
+  messages: ChatMessage[],
+  teamMembers: TeamMember[],
+): Promise<string> {
+  if (!process.env.API_KEY) return "API key not configured.";
+
+  const getSenderName = (senderId: string) => {
+    return teamMembers.find(m => m.id === senderId)?.name || 'Unknown User';
+  };
+
+  const transcript = messages
+    .map(msg => `${getSenderName(msg.senderId)}: ${msg.text}`)
+    .join('\n');
+
+  const prompt = `
+    You are an expert meeting summarization assistant for a professional consulting firm's internal chat.
+    Analyze the following chat transcript and generate a concise, well-structured summary.
+    Format your response using clear markdown headings and bullet points.
+
+    Your summary MUST include the following sections if relevant information is present:
+    - **Key Decisions:** A bulleted list of any decisions that were made.
+    - **Action Items:** A bulleted list clearly stating who is responsible for what. Use '@' to mention users (e.g., "@Alice to follow up...").
+    - **Main Discussion Points:** A brief overview of the topics discussed.
+
+    If a section has no relevant information, omit it from the summary.
+    Keep the tone professional and action-oriented.
+
+    **Chat Transcript:**
+    ---
+    ${transcript}
+    ---
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-pro',
+      contents: prompt,
+    });
+    return response.text;
+  } catch (error) {
+    console.error("Error summarizing chat history:", error);
+    return "An error occurred while generating the summary.";
+  }
+}
+
+// --- Volunteer Management ---
+
+const recommendationSchema = {
+  type: Type.OBJECT,
+  properties: {
+    recommendations: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          volunteerId: { type: Type.STRING },
+          name: { type: Type.STRING },
+          justification: { type: Type.STRING },
+          matchScore: { type: Type.NUMBER },
+        },
+        required: ['volunteerId', 'name', 'justification', 'matchScore'],
+      },
+    },
+  },
+  required: ['recommendations'],
+};
+
+export async function recommendVolunteers(
+  taskDescription: string,
+  volunteers: Volunteer[],
+): Promise<RecommendedVolunteer[]> {
+  if (!process.env.API_KEY) {
+    return [];
+  }
+
+  const volunteerData = volunteers.map(v => ({
+    id: v.id,
+    name: v.name,
+    skills: v.skills.join(', '),
+    availability: v.availability,
+  }));
+
+  const prompt = `
+    You are an AI assistant for a non-profit consulting CRM. Your task is to recommend the best volunteers for a specific task.
+    Analyze the list of available volunteers and their skills/availability against the provided task description.
+
+    **Task Description:**
+    "${taskDescription}"
+
+    **Available Volunteers:**
+    ${JSON.stringify(volunteerData, null, 2)}
+
+    **Instructions:**
+    1. Evaluate each volunteer's suitability for the task based on their skills and stated availability.
+    2. Provide a numerical "matchScore" from 0 to 100, where 100 is a perfect match.
+    3. Write a brief, one-sentence "justification" for why each volunteer is a good match.
+    4. Return a ranked list of the top 3-5 most suitable volunteers.
+    5. The final output must be a JSON object that strictly adheres to the provided schema.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-pro',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: recommendationSchema,
+      },
+    });
+    const result = JSON.parse(response.text);
+    return result.recommendations || [];
+  } catch (error) {
+    console.error("Error recommending volunteers:", error);
+    return [];
+  }
+}
+
+export async function generateOnboardingPacket(
+  volunteer: Volunteer,
+  project: Project,
+  teamMembers: TeamMember[],
+): Promise<string> {
+  if (!process.env.API_KEY) {
+    return "API key not configured.";
+  }
+
+  const projectTeam = teamMembers
+    .filter(tm => project.teamMemberIds.includes(tm.id))
+    .map(tm => `- ${tm.name}, ${tm.role}`)
+    .join('\n');
+
+  const initialTasks = project.tasks
+    .filter(t => t.status === TaskStatus.ToDo)
+    .slice(0, 3)
+    .map(t => `- ${t.description}`)
+    .join('\n');
+
+  const prompt = `
+    You are a friendly and professional onboarding specialist for a non-profit consulting firm.
+    Your task is to generate a personalized onboarding packet/email for a new volunteer joining a project.
+    The tone should be welcoming, informative, and encouraging.
+    Format the output as clear markdown.
+
+    **Volunteer Details:**
+    - Name: ${volunteer.name}
+
+    **Project Details:**
+    - Name: ${project.name}
+    - Description: ${project.description}
+
+    **Key Team Members on this Project:**
+    ${projectTeam || 'Team members to be assigned.'}
+
+    **Potential Initial Tasks:**
+    ${initialTasks || 'Your project manager will assign your first tasks shortly.'}
+
+    **Instructions:**
+    1. Start with a warm welcome addressed to the volunteer by name.
+    2. Briefly introduce the project they're joining, using the provided description.
+    3. Introduce the key team members they'll be working with.
+    4. Suggest some initial tasks to help them get started.
+    5. End with an encouraging closing statement and thank them for their contribution.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+    });
+    return response.text;
+  } catch (error) {
+    console.error("Error generating onboarding packet:", error);
+    return "An error occurred while generating the onboarding packet.";
+  }
+}
+
+
 export async function processTextWithAction(text: string, action: 'improve' | 'summarize' | 'clarify'): Promise<string> {
   if (!process.env.API_KEY) return "API key not configured.";
   
@@ -569,6 +815,75 @@ export async function transcribeAudio(audioDataB64: string, mimeType: string): P
         return "Error transcribing audio. The model may not support this audio format.";
     }
 }
+
+const meetingAnalysisSchema = {
+    type: Type.OBJECT,
+    properties: {
+        summary: {
+            type: Type.STRING,
+            description: "A concise summary of the meeting formatted in markdown. Include sections for 'Key Decisions' and 'Discussion Points'."
+        },
+        actionItems: {
+            type: Type.ARRAY,
+            description: "A list of clear, actionable tasks identified from the transcript.",
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    taskDescription: {
+                        type: Type.STRING,
+                        description: "The full description of the action item."
+                    },
+                    suggestedAssignee: {
+                        type: Type.STRING,
+                        description: "The name of the person mentioned as responsible, if any. Null if no one is mentioned."
+                    }
+                },
+                required: ['taskDescription']
+            }
+        }
+    },
+    required: ['summary', 'actionItems']
+};
+
+export async function analyzeTranscript(transcript: string): Promise<MeetingAnalysisResult> {
+    if (!process.env.API_KEY) {
+        return { summary: "API key not configured.", actionItems: [] };
+    }
+
+    const prompt = `
+        You are an expert meeting summarization assistant. Analyze the following meeting transcript.
+        Your task is to:
+        1. Create a concise summary of the meeting. The summary should be in markdown and include a "Key Decisions" section if any were made.
+        2. Extract all clear action items. For each action item, identify who it was assigned to if mentioned.
+
+        Return the result as a single JSON object that strictly adheres to the provided schema.
+
+        **Meeting Transcript:**
+        ---
+        ${transcript}
+        ---
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-pro',
+            contents: prompt,
+            config: {
+                responseMimeType: 'application/json',
+                responseSchema: meetingAnalysisSchema,
+            }
+        });
+        return JSON.parse(response.text);
+    } catch (error) {
+        console.error("Error analyzing transcript:", error);
+        return {
+            summary: "An error occurred while analyzing the transcript.",
+            actionItems: [],
+            error: "Failed to process the transcript."
+        };
+    }
+}
+
 
 export async function findNearbyPlaces(lat: number, lng: number, query: string): Promise<{ text: string, sources: any[] }> {
   if (!process.env.API_KEY) {
@@ -676,7 +991,8 @@ interface AllData {
     teamMembers: TeamMember[];
     activities: Activity[];
     volunteers: Volunteer[];
-    documents: Document[];
+    // FIX: Use AppDocument alias to avoid name collision with global DOM Document type.
+    documents: AppDocument[];
 }
 
 interface SearchIdResults {

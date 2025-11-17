@@ -700,6 +700,8 @@ const App: React.FC = () => {
               projectTeamMembers={projectTeamMembers} 
               allTeamMembers={teamMembers} 
               cases={projectCases}
+// FIX: Pass 'volunteers' prop to ProjectDetail component to satisfy its prop requirements.
+              volunteers={volunteers}
               onBack={handleBackToList}
               onUpdateTaskNote={handleUpdateTaskNote}
             />
@@ -842,6 +844,8 @@ const App: React.FC = () => {
                   volunteers={volunteers} 
                   clients={clients} 
                   projects={projects} 
+// FIX: Pass 'teamMembers' prop to VolunteerList component to satisfy its prop requirements.
+                  teamMembers={teamMembers}
                   onAddVolunteer={() => setIsAddVolunteerDialogOpen(true)} 
                 />;
       case 'charity': 

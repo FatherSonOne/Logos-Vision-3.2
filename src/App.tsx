@@ -7,7 +7,7 @@ import { ProjectDetail } from '../components/ProjectDetail';
 import { mockClients, mockTeamMembers, mockProjects, mockActivities, mockChatRooms, mockChatMessages, mockDonations, mockVolunteers, mockCases, mockDocuments, mockWebpages, mockEvents, mockEmailCampaigns } from '../data/mockData';
 import { portalDbService } from '../services/portalDbService';
 import { performAdvancedSearch } from '../services/geminiService';
-import type { Client, TeamMember, Project, EnrichedTask, Activity, ChatRoom, ChatMessage, Donation, Volunteer, Case, Document as AppDocument, Webpage, CaseComment, Event, PortalLayout, EmailCampaign, WebSearchResult, SearchResults, AiProjectPlan } from '../types';
+import type { Client, TeamMember, Project, EnrichedTask, Activity, ChatRoom, ChatMessage, Donation, Volunteer, Case, Document as AppDocument, Webpage, CaseComment, Event, PortalLayout, EmailCampaign, WebSearchResult, SearchResults, AiProjectPlan, Task } from '../types';
 import { ProjectStatus, TaskStatus, ActivityType, ActivityStatus, CaseStatus, DocumentCategory } from '../types';
 import type { Page } from '../types';
 import { ClientList } from '../components/ClientList';
@@ -50,6 +50,7 @@ import { useToast } from './components/ui/Toast';
 import { GuidedTour, TourStep } from '../components/GuidedTour';
 import { QuickAddButton, QuickAction } from '../components/quickadd/QuickAddButton';
 import { ProjectPlannerModal } from '../components/ProjectPlannerModal';
+import { MeetingAssistantModal } from '../components/MeetingAssistantModal';
 import { ClipboardListIcon, CaseIcon, BuildingIcon, SparklesIcon, FolderIcon, CalendarIcon, HandHeartIcon } from '../components/icons';
 
 const App: React.FC = () => {
@@ -94,6 +95,8 @@ const App: React.FC = () => {
   const [editingCase, setEditingCase] = useState<Case | null>(null);
   const [isAiChatOpen, setIsAiChatOpen] = useState(false);
   const [isProjectPlannerOpen, setIsProjectPlannerOpen] = useState(false);
+  const [selectedActivityForAssistant, setSelectedActivityForAssistant] = useState<Activity | null>(null);
+
 
   // State for Gold Pages editor
   const [isGoldPagesEditorOpen, setIsGoldPagesEditorOpen] = useState(false);
@@ -692,6 +695,40 @@ const App: React.FC = () => {
     }
 }, [clients, projects, cases, teamMembers, activities, volunteers, documents, navigateToPage]);
 
+  // --- AI Meeting Assistant Handlers ---
+  const handleOpenMeetingAssistant = (activity: Activity) => {
+    setSelectedActivityForAssistant(activity);
+  };
+
+  const handleCloseMeetingAssistant = () => {
+    setSelectedActivityForAssistant(null);
+  };
+
+  const handleSaveActionItems = (newTasks: Omit<Task, 'id' | 'status' | 'dueDate'>[], projectId: string) => {
+    if (!projectId) {
+      showToast('Could not save tasks: No project selected.', 'error');
+      return;
+    }
+
+    setProjects(prevProjects => {
+      return prevProjects.map(p => {
+        if (p.id === projectId) {
+          const addedTasks: Task[] = newTasks.map(t => ({
+            ...t,
+            id: `task-${Date.now()}-${Math.random()}`,
+            status: TaskStatus.ToDo,
+            dueDate: p.endDate, // Default to project end date
+          }));
+          return { ...p, tasks: [...p.tasks, ...addedTasks] };
+        }
+        return p;
+      });
+    });
+
+    showToast(`${newTasks.length} action item(s) added to project.`, 'success');
+    handleCloseMeetingAssistant();
+  };
+
   const renderContent = () => {
     if (currentPage === 'projects' && selectedProjectId) {
         const project = projects.find(p => p.id === selectedProjectId);
@@ -705,7 +742,6 @@ const App: React.FC = () => {
               projectTeamMembers={projectTeamMembers} 
               allTeamMembers={teamMembers} 
               cases={projectCases}
-              // FIX: Add missing 'volunteers' prop to ProjectDetail component.
               volunteers={volunteers}
               onBack={handleBackToList}
               onUpdateTaskNote={handleUpdateTaskNote}
@@ -775,6 +811,7 @@ const App: React.FC = () => {
           onLogActivity={() => { setEditingActivity(null); setIsActivityDialogOpen(true); }}
           onEdit={handleEditActivity}
           onDelete={handleDeleteActivity}
+          onProcessMeeting={handleOpenMeetingAssistant}
         />;
       case 'organizations':
         return <ClientList clients={clients} onAddOrganization={() => setIsAddContactDialogOpen(true)} onSelectOrganization={handleSelectOrganization} />;
@@ -849,7 +886,6 @@ const App: React.FC = () => {
                   volunteers={volunteers} 
                   clients={clients} 
                   projects={projects} 
-                  // FIX: Add missing 'teamMembers' prop to VolunteerList component.
                   teamMembers={teamMembers}
                   onAddVolunteer={() => setIsAddVolunteerDialogOpen(true)} 
                 />;
@@ -992,6 +1028,14 @@ const App: React.FC = () => {
             onClose={() => setIsProjectPlannerOpen(false)}
             onSave={handleSaveProjectPlan}
             clients={clients}
+        />
+        <MeetingAssistantModal
+            isOpen={!!selectedActivityForAssistant}
+            onClose={handleCloseMeetingAssistant}
+            activity={selectedActivityForAssistant}
+            projects={projects}
+            teamMembers={teamMembers}
+            onSaveTasks={handleSaveActionItems}
         />
         {isGoldPagesEditorOpen && editingWebpage && (
           <div className="absolute inset-0 z-50 bg-white/30 dark:bg-slate-900/50 backdrop-blur-xl">
